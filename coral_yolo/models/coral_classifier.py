@@ -29,3 +29,11 @@ class CoralClassifier(nn.Module):
         pooled = self.pool(fused).flatten(1)                      # BxC
         logits = self.head(pooled)                                # BxK
         return logits
+    
+    def rgb_mask_to_binary(mask_batch: torch.Tensor) -> torch.Tensor:
+        # Simple heuristic: any nonzero pixel = coral
+        coral_mask = (mask_batch.sum(dim=1, keepdim=True) > 0).float()
+        return coral_mask
+
+    
+
