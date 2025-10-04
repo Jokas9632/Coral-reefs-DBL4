@@ -1,9 +1,0 @@
-# config/coral.yaml
-# Dataset definition for YOLO training
-path: ../data/coral          # dataset root
-train: images/train
-val: images/val
-test: images/test
-
-nc: 2                        # number of classes
-names: [ 'Bleached', 'Dead' ]
