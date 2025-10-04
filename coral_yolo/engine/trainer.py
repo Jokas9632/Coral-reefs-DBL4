@@ -2,8 +2,8 @@
 from typing import Dict, Any
 import torch
 from torch.utils.data import DataLoader
-from coral_yolo.losses.classification_loss import CoralClassificationLoss
-from coral_yolo.engine.metrics import ClsPRF1
+from losses.classification_loss import CoralClassificationLoss
+from engine.metrics import ClsPRF1
 
 class Trainer:
     """Runs training/validation for the coral classifier, with device auto-switch."""
