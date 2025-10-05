@@ -13,12 +13,13 @@ class CoralTrainer:
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.model.to(self.device)
         self.class_names = class_names or ["Healthy", "Unhealthy", "Dead"]
+        self.num_classes = len(self.class_names)
 
     def train_epoch(self, dataloader, optimizer, criterion):
         """Train for one epoch."""
         self.model.train()
         total_loss = 0
-        metrics = CoralMetrics(num_classes=3, class_names=self.class_names)
+        metrics = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
 
         pbar = tqdm(dataloader, desc="Training")
         for batch_idx, (images, labels) in enumerate(pbar):
@@ -51,7 +52,7 @@ class CoralTrainer:
         """Validate the model."""
         self.model.eval()
         total_loss = 0
-        metrics = CoralMetrics(num_classes=3, class_names=self.class_names)
+        metrics = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
 
         with torch.no_grad():
             pbar = tqdm(dataloader, desc="Validation")
@@ -125,7 +126,7 @@ class CoralTrainer:
         print("\n" + "="*60)
         print("FINAL VALIDATION METRICS")
         print("="*60)
-        metric_printer = CoralMetrics(num_classes=3, class_names=self.class_names)
+        metric_printer = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
         metric_printer.print_metrics(val_metrics)
 
         return metrics_history
