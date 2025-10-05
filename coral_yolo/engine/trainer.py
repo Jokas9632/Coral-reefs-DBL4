@@ -11,7 +11,7 @@ from coral_yolo.engine.metrics import ClsPRF1
 
 
 # --- automatic collate with size cap ---------------------------------------
-def _auto_pad_collate(batch, max_size=640):
+def _auto_pad_collate(batch, max_size=384):
     """Pads variable-sized images/masks; supports dict or tuple outputs, capped to max_size."""
     if isinstance(batch[0], dict):
         imgs = [b["image"] for b in batch]
