@@ -17,7 +17,10 @@ class CoralResNet(nn.Module):
         super(CoralResNet, self).__init__()
 
         # Load pretrained ResNet50
-        self.resnet = models.resnet50(pretrained=pretrained)
+        if pretrained:
+            self.resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+        else:
+            self.resnet = models.resnet50(weights=None)
 
         # Freeze backbone if requested
         if freeze_backbone:
