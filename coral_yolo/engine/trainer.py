@@ -104,8 +104,15 @@ class Trainer:
         return stats
 
     # -----------------------------------------------------------------------
-    def fit(self, train_loader, val_loader=None, epochs=10, verbose=True):
-        """Train the model and print per-class metrics each epoch."""
+        # -----------------------------------------------------------------------
+    def fit(self, train_loader, val_loader=None, epochs=10, verbose=True, save_dir="checkpoints"):
+        """Train the model, print per-class metrics, and save checkpoints."""
+
+        import os
+        from pathlib import Path
+
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
+        best_f1 = 0.0  # track best validation F1
 
         def _wrap(loader, shuffle=False):
             return DataLoader(
@@ -125,6 +132,7 @@ class Trainer:
             tr = self._run_epoch(train_loader, train=True, epoch=ep, total_epochs=epochs)
             vl = self._run_epoch(val_loader, train=False, epoch=ep, total_epochs=epochs) if val_loader else {}
 
+            # --- Print metrics ---
             if verbose:
                 msg = (
                     f"✅ Epoch {ep:03d}/{epochs} | "
@@ -136,7 +144,7 @@ class Trainer:
                     )
                 print(msg)
 
-                # --- Print per-class metrics if available ---
+                # Per-class printout
                 if "per_class" in vl:
                     pcs = vl["per_class"]
                     print("📈 Per-class validation metrics:")
@@ -144,3 +152,24 @@ class Trainer:
                         print(f"   {cname:10s} | Prec={pcs['precision'][i]:.3f} | "
                               f"Rec={pcs['recall'][i]:.3f} | F1={pcs['f1'][i]:.3f}")
                 print("-" * 80)
+
+            # --- Save checkpoints ---
+            ckpt_path = os.path.join(save_dir, f"epoch_{ep:03d}.pt")
+            torch.save({
+                "epoch": ep,
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "train_metrics": tr,
+                "val_metrics": vl
+            }, ckpt_path)
+
+            print(f"💾 Model saved to {ckpt_path}")
+
+            # --- Track and save best model (based on val F1) ---
+            val_f1 = vl.get("f1", 0.0)
+            if val_f1 > best_f1:
+                best_f1 = val_f1
+                best_path = os.path.join(save_dir, "best_model.pt")
+                torch.save(self.model.state_dict(), best_path)
+                print(f"🏆 New best model saved! (Val F1={best_f1:.3f})")
+
