@@ -1,16 +1,16 @@
-"""Trainer class for coral bleaching classification (optimized + progress display)."""
+"""Trainer class for coral bleaching classification (with per-class metrics)."""
 
 from typing import Dict, Any
 import torch
 import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from tqdm import tqdm  # ✅ progress bar
+from tqdm import tqdm
 from coral_yolo.losses.classification_loss import CoralClassificationLoss
 from coral_yolo.engine.metrics import ClsPRF1
 
 
-# --- automatic collate with size cap ---------------------------------------
+# --- automatic collate with max_size cap -----------------------------------
 def _auto_pad_collate(batch, max_size=384):
     """Pads variable-sized images/masks; supports dict or tuple outputs, capped to max_size."""
     if isinstance(batch[0], dict):
@@ -21,36 +21,27 @@ def _auto_pad_collate(batch, max_size=384):
         imgs, masks = zip(*batch)
         labels = [torch.tensor(0) for _ in imgs]
 
-    # Cap extreme sizes to avoid OOM
     imgs = [F.interpolate(i.unsqueeze(0), size=(max_size, max_size),
                           mode="bilinear", align_corners=False).squeeze(0)
-            if max(i.shape[1], i.shape[2]) > max_size else i for i in imgs]
+            for i in imgs]
     masks = [F.interpolate(m.unsqueeze(0), size=(max_size, max_size),
                            mode="nearest").squeeze(0)
-             if max(m.shape[1], m.shape[2]) > max_size else m for m in masks]
+             for m in masks]
 
-    max_h = max(i.shape[1] for i in imgs)
-    max_w = max(i.shape[2] for i in imgs)
-
-    def _pad(t):
-        pad_h = max_h - t.shape[1]
-        pad_w = max_w - t.shape[2]
-        return F.pad(t, (0, pad_w, 0, pad_h))
-
-    imgs = torch.stack([_pad(i) for i in imgs])
-    masks = torch.stack([_pad(m) for m in masks])
+    imgs = torch.stack(imgs)
+    masks = torch.stack(masks)
     labels = torch.tensor([int(l) for l in labels], dtype=torch.long)
 
     return {"image": imgs, "mask": masks, "label": labels}
 
 
-# --- TRAINER ----------------------------------------------------------------
+# --- TRAINER ---------------------------------------------------------------
 class Trainer:
     def __init__(self, model, optimizer, device="auto", criterion=None, metric=None, grad_accum_steps=1):
         self.model = model
         self.optimizer = optimizer
 
-        # Device selection
+        # Device setup
         if isinstance(device, torch.device):
             self.device = device
         elif device == "auto":
@@ -65,11 +56,14 @@ class Trainer:
         self.criterion = criterion if criterion is not None else CoralClassificationLoss()
         self.metric = metric if metric is not None else ClsPRF1()
         self.grad_accum_steps = int(grad_accum_steps)
-        self.scaler = GradScaler(enabled=(self.device.type == "cuda"))
+        self.scaler = GradScaler(enabled=(self.device.type == "cuda"), device=self.device.type)
 
-    # --------------------------------------------------------------------------
+        # Class labels for printing
+        self.class_names = ["Healthy", "Bleached"]
+
+    # -----------------------------------------------------------------------
     def _run_epoch(self, loader, train=True, epoch=0, total_epochs=0):
-        """Run one epoch with tqdm progress bar."""
+        """Run one epoch and return metrics dict."""
         self.model.train(mode=train)
         self.metric.reset()
         total_loss, n = 0.0, 0
@@ -85,13 +79,12 @@ class Trainer:
             if train and (i % self.grad_accum_steps == 0):
                 self.optimizer.zero_grad(set_to_none=True)
 
-            with autocast(enabled=(self.device.type == "cuda"), dtype=torch.float16):
+            with autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.device.type == "cuda"):
                 logits = self.model(images, masks)
                 loss = self.criterion(logits, labels) / self.grad_accum_steps
 
             if train:
                 self.scaler.scale(loss).backward()
-
                 if (i + 1) % self.grad_accum_steps == 0:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
@@ -99,10 +92,9 @@ class Trainer:
             self.metric.update(logits.detach(), labels.detach())
             total_loss += loss.item()
             n += 1
-
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-            # Free GPU memory
+            # Free memory
             del images, masks, labels, logits, loss
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -111,9 +103,9 @@ class Trainer:
         stats["loss"] = total_loss / max(n, 1)
         return stats
 
-    # --------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
     def fit(self, train_loader, val_loader=None, epochs=10, verbose=True):
-        """Trains for N epochs with validation after each epoch."""
+        """Train the model and print per-class metrics each epoch."""
 
         def _wrap(loader, shuffle=False):
             return DataLoader(
@@ -134,11 +126,21 @@ class Trainer:
             vl = self._run_epoch(val_loader, train=False, epoch=ep, total_epochs=epochs) if val_loader else {}
 
             if verbose:
-                msg = f"✅ Epoch {ep:03d}/{epochs} | Train loss {tr['loss']:.4f}"
-                if "accuracy" in tr:
-                    msg += f" | Train Acc={tr['accuracy']:.3f} F1={tr['f1']:.3f}"
+                msg = (
+                    f"✅ Epoch {ep:03d}/{epochs} | "
+                    f"Train loss {tr['loss']:.4f} | Acc={tr.get('accuracy', 0):.3f} | F1={tr.get('f1', 0):.3f}"
+                )
                 if vl:
-                    msg += f" | Val loss {vl['loss']:.4f}"
-                    if "accuracy" in vl:
-                        msg += f" | Val Acc={vl['accuracy']:.3f} F1={vl['f1']:.3f}"
+                    msg += (
+                        f" || Val loss {vl['loss']:.4f} | Acc={vl.get('accuracy', 0):.3f} | F1={vl.get('f1', 0):.3f}"
+                    )
                 print(msg)
+
+                # --- Print per-class metrics if available ---
+                if "per_class" in vl:
+                    pcs = vl["per_class"]
+                    print("📈 Per-class validation metrics:")
+                    for i, cname in enumerate(self.class_names):
+                        print(f"   {cname:10s} | Prec={pcs['precision'][i]:.3f} | "
+                              f"Rec={pcs['recall'][i]:.3f} | F1={pcs['f1'][i]:.3f}")
+                print("-" * 80)
