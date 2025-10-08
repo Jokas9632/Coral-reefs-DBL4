@@ -6,7 +6,7 @@ from .mask_encoder import MaskEncoder
 
 class CoralClassifier(nn.Module):
     """Fuses image features with mask features and predicts bleaching class."""
-    def __init__(self, yolo_weights: str = "yolov11s.pt", num_classes: int = 2,
+    def __init__(self, yolo_weights: str = "yolo11n.pt", num_classes: int = 2,
                  mask_channels: int = 64, freeze_backbone: bool = True):
         super().__init__()
         self.backbone = YOLOv11Backbone(weights=yolo_weights, freeze=freeze_backbone)
