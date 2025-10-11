@@ -70,7 +70,14 @@ class CoralTrainer:
 
             # Validation
             if val_loader is not None:
-                val_loss, val_metrics = self.evaluate(val_loader, criterion)
+                val_loss, val_metrics = trainer.evaluate(resnet_val_loader, criterion=criterion)
+
+# works for both dict (your current metrics) and dataclass/object (other setups)
+                val_acc_value = (
+                                    val_metrics['accuracy'] if isinstance(val_metrics, dict) else val_metrics.accuracy
+                                    )
+                val_acc = 100.0 * float(val_acc_value)
+
                 history["val_loss"].append(val_loss)
                 CoralMetrics.print_metrics(val_metrics)
 
