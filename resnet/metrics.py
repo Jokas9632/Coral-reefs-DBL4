@@ -6,9 +6,9 @@ import numpy as np
 class CoralMetrics:
     """Calculate classification metrics for coral health prediction."""
 
-    def __init__(self, num_classes=3, class_names=None):
+    def __init__(self, num_classes=2, class_names=None):
         self.num_classes = num_classes
-        self.class_names = class_names or ["Healthy", "Unhealthy", "Dead"]
+        self.class_names = class_names or ["Healthy", "Unhealthy"]
         self.reset()
 
     def reset(self):
