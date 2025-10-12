@@ -76,7 +76,8 @@ class CoralTrainer:
                 val_acc_value = (
                                     val_metrics['accuracy'] if isinstance(val_metrics, dict) else val_metrics.accuracy
                                     )
-                val_acc = 100.0 * float(val_acc_value)
+                val_acc = 100.0 * float(val_metrics['accuracy'])
+
 
                 history["val_loss"].append(val_loss)
                 CoralMetrics.print_metrics(val_metrics)
