@@ -35,8 +35,8 @@ class CoralTrainer:
             loss.backward()
             optimizer.step()
 
-                running += float(loss.item())
-                pbar.set_postfix(loss=f"{running / max(1, pbar.n):.4f}")
+            running += float(loss.item())
+            pbar.set_postfix(loss=f"{running / max(1, pbar.n):.4f}")
 
             avg_train = running / max(1, len(train_loader))
             history["train_loss"].append(avg_train)
