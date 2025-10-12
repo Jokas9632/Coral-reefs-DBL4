@@ -1,4 +1,3 @@
-from typing import Optional, Dict, Any
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -7,102 +6,127 @@ from .metrics import CoralMetrics
 
 
 class CoralTrainer:
-    """
-    Minimal binary trainer with:
-      - BCEWithLogitsLoss (+ optional pos_weight = N_neg / N_pos)
-      - AdamW defaults (3e-4, wd=0.05)
-      - Progress bar
-      - Per-epoch eval + printed metrics
-    """
-    def __init__(self, model: nn.Module, device: str = 'cuda', threshold: float = 0.5):
+    """Trainer for coral health classification model."""
+
+    def __init__(self, model, device='cuda', class_names=None):
         self.model = model
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.model.to(self.device)
-        self.threshold = float(threshold)
+        self.class_names = class_names or ["Healthy", "Unhealthy", "Dead"]
+        self.num_classes = len(self.class_names)
 
-    def fit(
-        self,
-        train_loader: DataLoader,
-        val_loader: Optional[DataLoader] = None,
-        epochs: int = 10,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        pos_weight: Optional[float] = None,
-        scheduler: Optional[Any] = None
-    ) -> Dict[str, list]:
+    def train_epoch(self, dataloader, optimizer, criterion):
+        """Train for one epoch."""
+        self.model.train()
+        total_loss = 0
+        metrics = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
 
-        # Binary loss (always): BCEWithLogitsLoss with optional positive reweighting
-        if pos_weight is not None:
-            weight_tensor = torch.tensor([float(pos_weight)], device=self.device)
-            criterion = nn.BCEWithLogitsLoss(pos_weight=weight_tensor)
-        else:
-            criterion = nn.BCEWithLogitsLoss()
+        pbar = tqdm(dataloader, desc="Training")
+        for batch_idx, (images, labels) in enumerate(pbar):
+            images = images.to(self.device)
+            labels = labels.to(self.device)
 
-        # (5) Optimizer: AdamW robust defaults
-        if optimizer is None:
-            optimizer = torch.optim.AdamW(
-                [p for p in self.model.parameters() if p.requires_grad],
-                lr=3e-4, weight_decay=0.05, betas=(0.9, 0.999)
-            )
+            # Forward pass
+            optimizer.zero_grad()
+            outputs = self.model(images)
+            loss = criterion(outputs, labels)
 
-        history = {"train_loss": [], "val_loss": []}
+            # Backward pass
+            loss.backward()
+            optimizer.step()
 
-        for epoch in range(1, epochs + 1):
-            self.model.train()
-            running = 0.0
+            # Update metrics
+            total_loss += loss.item()
+            metrics.update(outputs.detach(), labels)
 
-            pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs} [train]")
-            for images, targets in pbar:
-                images = images.to(self.device, non_blocking=True)
-                # targets expected as 0/1 integers; cast to float column vector for BCE
-                targets = targets.to(self.device, non_blocking=True).float().unsqueeze(1)
+            # Update progress bar
+            pbar.set_postfix({'loss': f'{loss.item():.4f}'})
 
-                optimizer.zero_grad(set_to_none=True)
-                logits = self.model(images)
-                loss = criterion(logits, targets)
-                loss.backward()
-                optimizer.step()
+        avg_loss = total_loss / len(dataloader)
+        epoch_metrics = metrics.compute()
+        epoch_metrics['loss'] = avg_loss
 
-                running += float(loss.item())
-                pbar.set_postfix(loss=f"{running / max(1, pbar.n):.4f}")
+        return epoch_metrics
 
-            avg_train = running / max(1, len(train_loader))
-            history["train_loss"].append(avg_train)
-
-            # Validation
-            if val_loader is not None:
-                val_loss, val_metrics = trainer.evaluate(resnet_val_loader, criterion=criterion)
-
-# works for both dict (your current metrics) and dataclass/object (other setups)
-                val_acc_value = (
-                                    val_metrics['accuracy'] if isinstance(val_metrics, dict) else val_metrics.accuracy
-                                    )
-                val_acc = 100.0 * float(val_metrics['accuracy'])
-
-
-                history["val_loss"].append(val_loss)
-                CoralMetrics.print_metrics(val_metrics)
-
-            if scheduler is not None:
-                scheduler.step()
-
-        return history
-
-    @torch.no_grad()
-    def evaluate(self, loader: DataLoader, criterion=None):
+    def validate(self, dataloader, criterion):
+        """Validate the model."""
         self.model.eval()
-        running = 0.0
-        metrics = CoralMetrics()
+        total_loss = 0
+        metrics = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
 
-        for images, targets in tqdm(loader, desc="Eval"):
-            images = images.to(self.device, non_blocking=True)
-            targets = targets.to(self.device, non_blocking=True)
+        with torch.no_grad():
+            pbar = tqdm(dataloader, desc="Validation")
+            for images, labels in pbar:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
 
-            logits = self.model(images)
-            if criterion is not None:
-                running += float(criterion(logits, targets.float().unsqueeze(1)).item())
+                # Forward pass
+                outputs = self.model(images)
+                loss = criterion(outputs, labels)
 
-            probs = torch.sigmoid(logits).squeeze(1)
-            preds = (probs >= self.threshold).long()
-            metrics.update(preds.cpu(), targets.cpu())
+                # Update metrics
+                total_loss += loss.item()
+                metrics.update(outputs, labels)
 
-        return running / max(1, len(loader)), metrics.compute()
+                # Update progress bar
+                pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+
+        avg_loss = total_loss / len(dataloader)
+        val_metrics = metrics.compute()
+        val_metrics['loss'] = avg_loss
+
+        return val_metrics
+
+    def fit(self, train_loader, val_loader, epochs, optimizer, criterion, scheduler=None):
+        """
+        Train the model for multiple epochs.
+
+        Args:
+            train_loader: DataLoader for training data
+            val_loader: DataLoader for validation data
+            epochs: Number of epochs to train
+            optimizer: Optimizer (e.g., Adam, SGD)
+            criterion: Loss function (e.g., CrossEntropyLoss)
+            scheduler: Optional learning rate scheduler
+        """
+        best_val_f1 = 0.0
+        metrics_history = {'train': [], 'val': []}
+
+        for epoch in range(epochs):
+            print(f"\nEpoch {epoch + 1}/{epochs}")
+            print("-" * 60)
+
+            # Train
+            train_metrics = self.train_epoch(train_loader, optimizer, criterion)
+            metrics_history['train'].append(train_metrics)
+
+            print(f"\nTraining   - Loss: {train_metrics['loss']:.4f}, "
+                  f"Acc: {train_metrics['accuracy']:.4f}, "
+                  f"F1: {train_metrics['f1_macro']:.4f}")
+
+            # Validate
+            val_metrics = self.validate(val_loader, criterion)
+            metrics_history['val'].append(val_metrics)
+
+            print(f"Validation - Loss: {val_metrics['loss']:.4f}, "
+                  f"Acc: {val_metrics['accuracy']:.4f}, "
+                  f"F1: {val_metrics['f1_macro']:.4f}")
+
+            # Learning rate scheduler step
+            if scheduler is not None:
+                scheduler.step(val_metrics['loss'])
+
+            # Save best model
+            if val_metrics['f1_macro'] > best_val_f1:
+                best_val_f1 = val_metrics['f1_macro']
+                torch.save(self.model.state_dict(), 'resnet/best_model.pth')
+                print(f"✓ Best model saved with F1: {best_val_f1:.4f}")
+
+        # Print final validation metrics
+        print("\n" + "="*60)
+        print("FINAL VALIDATION METRICS")
+        print("="*60)
+        metric_printer = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
+        metric_printer.print_metrics(val_metrics)
+
+        return metrics_history
