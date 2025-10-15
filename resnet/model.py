@@ -5,6 +5,30 @@ from torchvision.models.resnet import Bottleneck  # for type checks
 
 
 class ECALayer(nn.Module):
+    def __init__(self, channels: int, k_size: int = 3):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=k_size // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, C, H, W), possibly fp16 under autocast
+        dtype = x.dtype
+
+        # global avg pool (keeps dtype)
+        y = self.avg_pool(x)                # (B, C, 1, 1)
+        y = y.squeeze(-1).transpose(1, 2)   # (B, 1, C)
+
+        # Do the ECA conv + sigmoid in FP32 for stability, then cast back
+        # This avoids "Half input vs Float weight" runtime errors.
+        with torch.cuda.amp.autocast(enabled=False):
+            y32 = y.float()                 # (B, 1, C) -> fp32
+            a32 = self.conv(y32)            # fp32 conv
+            a32 = self.sigmoid(a32)         # fp32 sigmoid
+
+        a = a32.to(dtype).transpose(1, 2).unsqueeze(-1)  # (B, C, 1, 1), back to original dtype
+        return x * a.expand_as(x)
+
     """
     Efficient Channel Attention (ECA)
     Paper: ECA-Net: Efficient Channel Attention for Deep CNN (CVPR 2020)
