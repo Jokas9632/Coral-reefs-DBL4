@@ -120,7 +120,7 @@ class CoralCNNTrainer:
             # Save best model
             if val_metrics['f1_macro'] > best_val_f1:
                 best_val_f1 = val_metrics['f1_macro']
-                torch.save(self.model.state_dict(), 'cnn/best_model.pth')
+                torch.save(self.model.state_dict(), 'models/best_cnn_model.pth')
                 print(f"✓ Best model saved with F1: {best_val_f1:.4f}")
 
         # Print final validation metrics
