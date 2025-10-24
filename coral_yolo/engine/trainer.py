@@ -1,4 +1,4 @@
-"""Trainer class for coral bleaching classification (with per-class metrics)."""
+#Yolo Trainer 
 
 from typing import Dict, Any
 import torch
@@ -10,9 +10,8 @@ from coral_yolo.losses.classification_loss import CoralClassificationLoss
 from coral_yolo.engine.metrics import ClsPRF1
 
 
-# --- automatic collate with max_size cap -----------------------------------
+
 def _auto_pad_collate(batch, max_size=384):
-    """Pads variable-sized images/masks; supports dict or tuple outputs, capped to max_size."""
     if isinstance(batch[0], dict):
         imgs = [b["image"] for b in batch]
         masks = [b["mask"] for b in batch]
@@ -35,7 +34,6 @@ def _auto_pad_collate(batch, max_size=384):
     return {"image": imgs, "mask": masks, "label": labels}
 
 
-# --- TRAINER ---------------------------------------------------------------
 class Trainer:
     def __init__(self, model, optimizer, device="auto", criterion=None, metric=None, grad_accum_steps=1):
         self.model = model
@@ -58,12 +56,11 @@ class Trainer:
         self.grad_accum_steps = int(grad_accum_steps)
         self.scaler = GradScaler(enabled=(self.device.type == "cuda"), device=self.device.type)
 
-        # Class labels for printing
-        self.class_names = ["Healthy", "Bleached"]
+        #Class labels
+        self.class_names = ["Healthy", "Unhealthy"]
 
-    # -----------------------------------------------------------------------
     def _run_epoch(self, loader, train=True, epoch=0, total_epochs=0):
-        """Run one epoch and return metrics dict."""
+        #metrics per epoch run 
         self.model.train(mode=train)
         self.metric.reset()
         total_loss, n = 0.0, 0
@@ -94,7 +91,6 @@ class Trainer:
             n += 1
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-            # Free memory
             del images, masks, labels, logits, loss
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -103,11 +99,8 @@ class Trainer:
         stats["loss"] = total_loss / max(n, 1)
         return stats
 
-    # -----------------------------------------------------------------------
-        # -----------------------------------------------------------------------
     def fit(self, train_loader, val_loader=None, epochs=10, verbose=True, save_dir="checkpoints"):
-        """Train the model, print per-class metrics, and save checkpoints."""
-
+        #model fit and save checkpoints
         import os
         from pathlib import Path
 
@@ -132,10 +125,10 @@ class Trainer:
             tr = self._run_epoch(train_loader, train=True, epoch=ep, total_epochs=epochs)
             vl = self._run_epoch(val_loader, train=False, epoch=ep, total_epochs=epochs) if val_loader else {}
 
-            # --- Print metrics ---
+        
             if verbose:
                 msg = (
-                    f"✅ Epoch {ep:03d}/{epochs} | "
+                    f"Epoch {ep:03d}/{epochs} | "
                     f"Train loss {tr['loss']:.4f} | Acc={tr.get('accuracy', 0):.3f} | F1={tr.get('f1', 0):.3f}"
                 )
                 if vl:
@@ -144,16 +137,16 @@ class Trainer:
                     )
                 print(msg)
 
-                # Per-class printout
+                # Per-class metrics print 
                 if "per_class" in vl:
                     pcs = vl["per_class"]
-                    print("📈 Per-class validation metrics:")
+                    print("Per-class validation metrics:")
                     for i, cname in enumerate(self.class_names):
                         print(f"   {cname:10s} | Prec={pcs['precision'][i]:.3f} | "
                               f"Rec={pcs['recall'][i]:.3f} | F1={pcs['f1'][i]:.3f}")
                 print("-" * 80)
 
-            # --- Save checkpoints ---
+            #saves 
             ckpt_path = os.path.join(save_dir, f"epoch_{ep:03d}.pt")
             torch.save({
                 "epoch": ep,
@@ -163,9 +156,9 @@ class Trainer:
                 "val_metrics": vl
             }, ckpt_path)
 
-            print(f"💾 Model saved to {ckpt_path}")
+            print(f"Model saved to {ckpt_path}")
 
-            # --- Track and save best model (based on val F1) ---
+            #track model based on f-1
             val_f1 = vl.get("f1", 0.0)
             if val_f1 > best_f1:
                 best_f1 = val_f1

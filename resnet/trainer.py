@@ -6,7 +6,7 @@ from .metrics import CoralMetrics
 
 
 class CoralTrainer:
-    """Trainer for coral health classification model."""
+    #Trainer for corals
 
     def __init__(self, model, device='cuda', class_names=None):
         self.model = model
@@ -16,7 +16,7 @@ class CoralTrainer:
         self.num_classes = len(self.class_names)
 
     def train_epoch(self, dataloader, optimizer, criterion):
-        """Train for one epoch."""
+        #One epoch training loop
         self.model.train()
         total_loss = 0
         metrics = CoralMetrics(num_classes=self.num_classes, class_names=self.class_names)
@@ -41,11 +41,9 @@ class CoralTrainer:
             avg_train = running / max(1, len(train_loader))
             history["train_loss"].append(avg_train)
 
-            # Validation
             if val_loader is not None:
                 val_loss, val_metrics = trainer.evaluate(resnet_val_loader, criterion=criterion)
 
-# works for both dict (your current metrics) and dataclass/object (other setups)
                 val_acc_value = (
                                     val_metrics['accuracy'] if isinstance(val_metrics, dict) else val_metrics.accuracy
                                     )
@@ -57,13 +55,13 @@ class CoralTrainer:
             if scheduler is not None:
                 scheduler.step(val_metrics['loss'])
 
-            # Save best model
+            #Save best model
             if val_metrics['f1_macro'] > best_val_f1:
                 best_val_f1 = val_metrics['f1_macro']
                 torch.save(self.model.state_dict(), 'resnet/best_model.pth')
                 print(f"✓ Best model saved with F1: {best_val_f1:.4f}")
 
-        # Print final validation metrics
+        #Validation Metrics 
         print("\n" + "="*60)
         print("FINAL VALIDATION METRICS")
         print("="*60)

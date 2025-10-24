@@ -1,12 +1,11 @@
-"""End model: YOLOv11 backbone + mask encoder + fusion + classification head."""
+#Coral Classifier 
 import torch
 import torch.nn as nn
 from .yolov11_backbone import YOLOv11Backbone
 from .mask_encoder import MaskEncoder
 
 class CoralClassifier(nn.Module):
-    """Fuses image features with mask features and predicts bleaching class."""
-    def __init__(self, yolo_weights: str = "yolo11n.pt", num_classes: int = 2,
+    def __init__(self, yolo_weights: str = "yolo11n.pt", num_classes: int = 2, #smallest yolo model
                  mask_channels: int = 64, freeze_backbone: bool = True):
         super().__init__()
         self.backbone = YOLOv11Backbone(weights=yolo_weights, freeze=freeze_backbone)
@@ -21,7 +20,7 @@ class CoralClassifier(nn.Module):
         self.head = nn.Linear(c_back, num_classes)
 
     def forward(self, image: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """Runs forward pass and returns logits [B, num_classes]."""
+        #Forward pass
         feat = self.backbone(image)                               # BxCxhxw
         mfeat = self.mask_enc(mask, feat_hw=(feat.shape[2], feat.shape[3]))  # BxCm×hxw
         fused = torch.cat([feat, mfeat], dim=1)                   # Bx(C+Cm)×hxw
@@ -31,7 +30,7 @@ class CoralClassifier(nn.Module):
         return logits
     
     def rgb_mask_to_binary(mask_batch: torch.Tensor) -> torch.Tensor:
-        # Simple heuristic: any nonzero pixel = coral
+        #Convert RGB mask to binary coral mask
         coral_mask = (mask_batch.sum(dim=1, keepdim=True) > 0).float()
         return coral_mask
 

@@ -4,26 +4,17 @@ import numpy as np
 
 
 class CoralMetrics:
-    """Calculate classification metrics for coral health prediction."""
-
+    #Classification Metrics Calculations
     def __init__(self, num_classes=3, class_names=None):
         self.num_classes = num_classes
         self.class_names = class_names or ["Healthy", "Unhealthy", "Dead"]
         self.reset()
 
     def reset(self):
-        """Reset all metrics."""
         self.all_preds = []
         self.all_labels = []
 
     def update(self, preds, labels):
-        """
-        Update metrics with batch predictions.
-
-        Args:
-            preds: torch.Tensor of shape (batch_size, num_classes) - logits or probabilities
-            labels: torch.Tensor of shape (batch_size,) - ground truth labels
-        """
         if preds.dim() == 2:
             preds = torch.argmax(preds, dim=1)
 
@@ -31,7 +22,6 @@ class CoralMetrics:
         self.all_labels.extend(labels.cpu().numpy().tolist())
 
     def compute(self):
-        """Compute all metrics."""
         preds = np.array(self.all_preds)
         labels = np.array(self.all_labels)
 

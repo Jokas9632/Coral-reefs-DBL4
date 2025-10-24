@@ -1,4 +1,4 @@
-"""Entrypoint to train the coral bleaching classifier (CPU/GPU via --device)."""
+#Train Coral with YoloV11 Classifier pyfile
 import argparse, os, random, numpy as np, torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
@@ -8,11 +8,9 @@ from models.coral_classifier import CoralClassifier
 from engine.trainer import Trainer
 
 def seed_all(seed: int = 0):
-    """Sets seeds for reproducibility."""
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
 
 def parse_args():
-    """Parses CLI arguments for quick control."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--train_root", type=str, default="data/train", help="root with images/ and masks/")
     ap.add_argument("--val_root", type=str, default="data/val", help="root with images/ and masks/")
@@ -28,7 +26,6 @@ def parse_args():
     return ap.parse_args()
 
 def main():
-    """Builds dataset/model and runs training."""
     args = parse_args()
     seed_all(0)
 

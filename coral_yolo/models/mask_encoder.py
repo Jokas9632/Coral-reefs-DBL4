@@ -1,10 +1,10 @@
-"""Small CNN that encodes a binary coral mask to match backbone feature scale."""
+#Encodes  binary mask to features 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 class MaskEncoder(nn.Module):
-    """Encodes 1×HxW binary mask into C_m×h×w feature map aligned with backbone."""
+    #Specific definition of mask encoder
     def __init__(self, out_channels: int = 64):
         super().__init__()
         self.conv = nn.Sequential(
@@ -17,6 +17,6 @@ class MaskEncoder(nn.Module):
         )
 
     def forward(self, mask: torch.Tensor, feat_hw: tuple[int, int]) -> torch.Tensor:
-        """Downscales mask to (h,w) using nearest and runs the CNN."""
+        #Mask downscaling on forward pass
         m = F.interpolate(mask, size=feat_hw, mode="nearest")
         return self.conv(m)
